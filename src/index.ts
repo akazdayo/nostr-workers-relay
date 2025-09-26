@@ -6,10 +6,10 @@ type Env = {
 
 export default {
   async fetch(request: Request, env: Env) {
-    const upgradeHeader = request.headers.get('Upgrade');
-    if (!upgradeHeader || upgradeHeader !== 'websocket') {
+    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
+
     const obj = env.LISTENTER.get(env.LISTENTER.idFromName("test"));
     return obj.fetch(request);
   }
@@ -19,7 +19,7 @@ export class Listener implements DurableObject {
   constructor(public state: DurableObjectState, public env: Env) { }
   async fetch(request: Request) {
     const webSocketPair = new WebSocketPair();
-    const [client, server] = Object.values(webSocketPair);
+    const [client, server] = Object.values(webSocketPair) as [WebSocket, WebSocket];
     const acceptedProtocol = this.#acceptWebSocket(server, request);
     this.#handleSession(server);
     const responseInit: ResponseInit = { status: 101, webSocket: client };
@@ -40,10 +40,11 @@ export class Listener implements DurableObject {
 
   #handleSession(socket: WebSocket) {
     console.log('Socket connected', socket);
-    socket.addEventListener('message', event => {
+
+    socket.addEventListener('message', (event) => {
       this.#handleIncomingMessage(socket, event).catch((err) => {
         console.error('Failed to handle message', err);
-        socket.send(JSON.stringify(["NOTICE", "internal error"]));
+        this.#sendNotice(socket, 'internal error');
       });
     });
     socket.addEventListener('close', () => {
@@ -57,61 +58,89 @@ export class Listener implements DurableObject {
 
   async #handleIncomingMessage(socket: WebSocket, event: MessageEvent) {
     if (typeof event.data !== 'string') {
-      socket.send(JSON.stringify(["NOTICE", "expected text frame"]));
+      this.#sendNotice(socket, 'expected text frame');
       return;
     }
 
-    let payload: unknown;
-    try {
-      payload = JSON.parse(event.data);
-    } catch (_err) {
-      socket.send(JSON.stringify(["NOTICE", "invalid json"]));
+    const parsed = this.#parseEventMessage(event.data);
+    if ('error' in parsed) {
+      this.#sendNotice(socket, parsed.error);
       return;
     }
 
-    if (!Array.isArray(payload) || payload.length === 0) {
-      socket.send(JSON.stringify(["NOTICE", "invalid nostr message"]));
-      return;
-    }
-
-    const [messageType, ...rest] = payload;
-
-    if (messageType !== 'EVENT') {
-      socket.send(JSON.stringify(["NOTICE", "write-only relay accepts EVENT messages only"]));
-      return;
-    }
-
-    const [eventObject] = rest;
-    if (!eventObject || typeof eventObject !== 'object') {
-      socket.send(JSON.stringify(["NOTICE", "event payload missing"]));
-      return;
-    }
-
-    const nostrEvent = eventObject as Event;
-
-    if (typeof nostrEvent.kind !== 'number' || !nostrEvent.id) {
-      socket.send(JSON.stringify(["NOTICE", "event missing id or kind"]));
-      return;
-    }
-
-    if (!nostrEvent.pubkey || !nostrEvent.sig || typeof nostrEvent.created_at !== 'number') {
-      socket.send(JSON.stringify(["NOTICE", "event missing required fields"]));
-      return;
-    }
+    const nostrEvent = parsed.event;
 
     if (nostrEvent.kind !== 1) {
-      socket.send(JSON.stringify(["OK", nostrEvent.id, false, "only kind 1 accepted"]));
+      this.#sendOk(socket, nostrEvent.id, false, 'only kind 1 accepted');
+      return;
+    }
+
+    if (!verifyEvent(nostrEvent)) {
+      this.#sendOk(socket, nostrEvent.id, false, 'invalid signature');
       return;
     }
 
     await this.#storeAcceptedEvent(nostrEvent);
-    socket.send(JSON.stringify(["OK", nostrEvent.id, true, ""]));
+    this.#sendOk(socket, nostrEvent.id, true, '');
   }
 
   async #storeAcceptedEvent(event: Event) {
-    if (!verifyEvent(event)) return;
-    const total: string[] = (await this.state.storage.get('event-list')) ?? [];
-    await this.state.storage.put('event-list', [...total, event.content]);
-    console.log(total);
+    const storedEvents = (await this.state.storage.get<string[]>('event-list')) ?? [];
+    storedEvents.push(event.content);
+    await this.state.storage.put('event-list', storedEvents);
+    console.log('Stored event', event.id);
+  }
+
+  #parseEventMessage(raw: string): { event: Event } | { error: string } {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch (_err) {
+      return { error: 'invalid json' };
+    }
+
+    if (!Array.isArray(payload) || payload.length === 0) {
+      return { error: 'invalid nostr message' };
+    }
+
+    const [messageType, eventPayload] = payload;
+
+    if (messageType !== 'EVENT') {
+      return { error: 'write-only relay accepts EVENT messages only' };
+    }
+
+    if (!eventPayload || typeof eventPayload !== 'object') {
+      return { error: 'event payload missing' };
+    }
+
+    const nostrEvent = eventPayload as Partial<Event>;
+
+    if (typeof nostrEvent.kind !== 'number' || typeof nostrEvent.id !== 'string' || !nostrEvent.id) {
+      return { error: 'event missing id or kind' };
+    }
+
+    if (
+      typeof nostrEvent.pubkey !== 'string' ||
+      !nostrEvent.pubkey ||
+      typeof nostrEvent.sig !== 'string' ||
+      !nostrEvent.sig ||
+      typeof nostrEvent.created_at !== 'number'
+    ) {
+      return { error: 'event missing required fields' };
+    }
+
+    return { event: nostrEvent as Event };
+  }
+
+  #sendNotice(socket: WebSocket, message: string) {
+    this.#sendJson(socket, ['NOTICE', message]);
+  }
+
+  #sendOk(socket: WebSocket, eventId: string, success: boolean, message: string) {
+    this.#sendJson(socket, ['OK', eventId, success, message]);
+  }
+
+  #sendJson(socket: WebSocket, payload: unknown[]) {
+    socket.send(JSON.stringify(payload));
   }
 }
