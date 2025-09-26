@@ -8,7 +8,9 @@
   },
   "dependencies": {
     "hono": "^4.9.8",
-    "nostr-tools": "^2.17.0"
+    "nostr-tools": "^2.17.0",
+    "typescript": "^5.9.2",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "wrangler": "^4.4.0"
