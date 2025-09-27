@@ -6,10 +6,6 @@ type Env = {
 
 export default {
   async fetch(request: Request, env: Env) {
-    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
-      return new Response('Expected Upgrade: websocket', { status: 426 });
-    }
-
     const obj = env.LISTENTER.get(env.LISTENTER.idFromName("test"));
     return obj.fetch(request);
   }
@@ -18,6 +14,21 @@ export default {
 export class Listener implements DurableObject {
   constructor(public state: DurableObjectState, public env: Env) { }
   async fetch(request: Request) {
+    const url = new URL(request.url);
+
+    // Handle GET request for /get-event
+    if (request.method === 'GET' && url.pathname === '/get-event') {
+      const storedEvents = (await this.state.storage.get<string[]>('event-list')) ?? [];
+      return new Response(JSON.stringify(storedEvents), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Handle WebSocket connection
+    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('Expected Upgrade: websocket', { status: 426 });
+    }
+
     const webSocketPair = new WebSocketPair();
     const [client, server] = Object.values(webSocketPair) as [WebSocket, WebSocket];
     const acceptedProtocol = this.#acceptWebSocket(server, request);
