@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "durable",
+  "name": "nostr-worker-relay",
   "main": "src/index.ts",
   "compatibility_date": "2025-09-26",
   "migrations": [
