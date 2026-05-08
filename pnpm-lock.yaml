@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       hono:
-        specifier: ^4.9.8
-        version: 4.9.8
+        specifier: ^4.12.16
+        version: 4.12.16
       nostr-tools:
         specifier: ^2.17.0
         version: 2.17.0(typescript@5.9.2)
@@ -444,8 +444,8 @@ packages:
   glob-to-regexp@0.4.1:
     resolution: {integrity: sha512-lkX1HJXwyMcprw/5YUZc2s7DrpAiHB21/V+E1rHUrVNokkvB6bqMzT0VfV6/86ZNabt1k14YOIaT7nDvOX3Iiw==}
 
-  hono@4.9.8:
-    resolution: {integrity: sha512-JW8Bb4RFWD9iOKxg5PbUarBYGM99IcxFl2FPBo2gSJO11jjUDqlP1Bmfyqt8Z/dGhIQ63PMA9LdcLefXyIasyg==}
+  hono@4.12.16:
+    resolution: {integrity: sha512-jN0ZewiNAWSe5khM3EyCmBb250+b40wWbwNILNfEvq84VREWwOIkuUsFONk/3i3nqkz7Oe1PcpM2mwQEK2L9Kg==}
     engines: {node: '>=16.9.0'}
 
   is-arrayish@0.3.4:
@@ -876,7 +876,7 @@ snapshots:
 
   glob-to-regexp@0.4.1: {}
 
-  hono@4.9.8: {}
+  hono@4.12.16: {}
 
   is-arrayish@0.3.4: {}
 
